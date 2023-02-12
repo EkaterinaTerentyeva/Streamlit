@@ -227,8 +227,8 @@ with orders_container:
         res = pd.concat([article_sales, forecast], axis=0).reset_index()
         res.columns = ['date', 'sales', 'prediction']
         fig = go.Figure()
-        fig.add_trace(go.Scatter(x= res['date'], y= res['sales'], name = 'orders'))
-        fig.add_trace(go.Scatter(x=res['date'], y=res['prediction'], name = 'predicted orders'))
+        fig.add_trace(go.Scatter(x= res['date'], y= res['sales'], name = f'orders {article}'))
+        fig.add_trace(go.Scatter(x=res['date'], y=res['prediction'], name = f'predicted orders {article}'))
         fig.update_layout(barmode='overlay', width=1300, height=300)
         fig.update_traces(opacity=0.75)
         st.plotly_chart(fig)
