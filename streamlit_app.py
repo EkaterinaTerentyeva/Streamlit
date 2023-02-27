@@ -223,7 +223,7 @@ with article_details_container:
 
     for_string = [str(i) for i in articles_selection]
     string_articles = ' '.join(for_string)
-    st.dataframe(res.query('nm_id == @articles_selection'), use_container_width=True)
+    st.dataframe(res.query('nm_id == @articles_selection').set_index('nm_id'), use_container_width=True)
 
     for article in articles_selection:
         article_sales = orders_.query('nm_id == @article').set_index('last_change_date')
