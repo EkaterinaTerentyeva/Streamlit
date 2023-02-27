@@ -12,7 +12,7 @@ pio.renderers.default = 'browser'
 import pandas as pd
 pio.renderers.default = 'browser'
 from sqlalchemy import create_engine
-
+import statsmodels.api as sm
 
 # make any grid with a function
 def make_grid(cols,rows):
@@ -99,19 +99,16 @@ stocks['lastchangedate'] = stocks['lastchangedate'].dt.date
 
 button_container = st.container()
 with button_container:
-    articles = orders.query('is_cancel == False')['nm_id'].unique()
-    articles_selection = st.sidebar.multiselect('Choose a product article (nmid)',
-                                        options=articles,
-                                        max_selections=3,
-                                        default=articles[0])
+    number_1 = st.sidebar.number_input('Insert the excess stock of goods (in days)',
+                             min_value=15,
+                             max_value=1000,
+                             step=1)
 
-    for_string = [str(i) for i in articles_selection]
-    string_articles = ' '.join(for_string)
+    number_2 = st.sidebar.number_input('Insert insufficient quantity of goods in stock (in days)',
+                                       min_value=5,
+                                       max_value=1000,
+                                       step=1)
 
-    number = st.sidebar.number_input('Insert the critical value of a product in stock',
-                                     min_value = 0,
-                                     max_value = 1000,
-                                     step = 1)
 
 
 
@@ -121,89 +118,67 @@ with button_container:
 #######################
 stock_container = st.container()
 with stock_container:
-    st.markdown('# Stocks info')
-    st.markdown('#### General info')
-    grid_1 = make_grid(1, (4, 2))
+    st.markdown('# Stock general info')
+    grid_1 = make_grid(2, (3, 1))
 
     # Getting up-to-date info about stock
     current_stock_date = stocks.sort_values(by=['lastchangedate'], ascending=False)['lastchangedate'].iloc[0]
 
     # General info about all stock
+
     current_stock = stocks.query('lastchangedate == @current_stock_date')
-    stock_by_articles = current_stock.groupby('nmid')['quantity'].sum().reset_index().sort_values(by = 'quantity', ascending = False)
     fig = go.Figure()
-    fig.add_trace(go.Bar(x=stock_by_articles['nmid'], y=stock_by_articles['quantity']))
-    fig.update_layout(barmode='overlay', width=900, height=400)
+    for warehouse in current_stock['warehousename'].unique():
+
+        stock_by_articles = current_stock.query('warehousename == @warehouse').groupby('nmid')['quantity'].sum().reset_index().sort_values(by = 'quantity', ascending = False)
+        exist_stock_by_article = stock_by_articles.query('quantity >0')
+        fig.add_trace(go.Bar(x=exist_stock_by_article['nmid'], y=exist_stock_by_article['quantity'], name = warehouse))
+    fig.update_layout(barmode='stack', width=900, height=400)
     fig.update_traces(opacity=0.75)
-    fig.update_layout(xaxis_type='category')
-    fig.update_layout(title=f'Remaining articles in stock {current_stock_date}')
+    fig.update_layout(xaxis_type='category', xaxis={'categoryorder': "total descending"}, title=f'Remaining articles in stock {current_stock_date}')
+
     grid_1[0][0].plotly_chart(fig)
 
-    # General info about warehouses
 
-    warehouses = current_stock.groupby(['warehousename'])['quantity'].sum().reset_index()
+    grid_1[1][0].markdown(f'**Remaining product groups in stock {current_stock_date}**')
     fig = go.Figure()
-    fig.add_trace(go.Pie(labels=warehouses['warehousename'], values=warehouses['quantity']))
-    fig.update_layout(barmode='overlay', height=200)
-    fig.update_layout(title=f'Distribution of goods in warehouses {current_stock_date}')
-    fig.update_traces(textposition='inside')
-    fig.update_layout(
-        height=400,
-        width=430,
-        uniformtext_minsize=10, uniformtext_mode='hide',
-        legend=dict(font=dict(size=12)),
-        margin=dict(
-            l=0,
-            r=0,
-            b=0,
-            t=50,
-            pad=0
-        ))
-    grid_1[0][1].plotly_chart(fig)
+    for warehouse in current_stock['warehousename'].unique():
+        stock_by_subject = current_stock.query('warehousename == @warehouse').groupby('subject')['quantity'].sum().reset_index().sort_values(by='quantity',
+                                                                                                  ascending=False)
+        exist_stock_by_subject = stock_by_subject.query('quantity >0')
 
-    # Critical stock
-    critical_in_stock = stock_by_articles.query('quantity <= @number').reset_index(drop=True).set_index('nmid')
-    st.markdown(f'#### Running out of stock - quantity less than {number}')
-    st.table(critical_in_stock.style.background_gradient(cmap="Reds_r"))
-
-
-
-    # Detailed info about article
-    st.markdown(f'#### Change inventory for chosen article(s) {string_articles} from  {stocks["lastchangedate"].min()} to {stocks["lastchangedate"].max()}')
-    fig = go.Figure()
-    for article in articles_selection:
-        all_info = stocks.query('nmid == @article').groupby('lastchangedate')['quantity'].sum().reset_index()
-        fig.add_trace(go.Scatter(x=all_info['lastchangedate'], y=all_info['quantity'], name = f'{article}'))
-        fig.update_layout(barmode='overlay', width=1300, height=300)
-        fig.update_traces(opacity=0.75)
-    st.plotly_chart(fig)
-
-
-#######################
-# Orders information
-#######################
-orders_container = st.container()
-with orders_container:
-    st.markdown('# Orders info')
-    st.write(f"#### Orders from {orders['last_change_date'].min()} to {orders['last_change_date'].max()}")
-
-    # General info about all orders
-    order_by_articles = orders.query('is_cancel == False').groupby('nm_id')['id'].count().sort_values(ascending=False).reset_index()
-    order_by_articles.columns = ['nmid', 'orders']
-    order_by_articles['nmid'] = order_by_articles['nmid'].astype('str')
-    fig = go.Figure()
-    fig.add_trace(go.Bar(x = order_by_articles['nmid'], y=order_by_articles['orders']))
-    fig.update_layout(barmode='overlay', width=1300, height=300)
+        fig.add_trace(go.Bar(x=exist_stock_by_subject['subject'], y=exist_stock_by_subject['quantity'], name = warehouse))
+    fig.update_layout(barmode='stack', width=900, height=400)
     fig.update_traces(opacity=0.75)
-    fig.update_layout(xaxis_type='category')
-    st.plotly_chart(fig)
+    fig.update_layout(xaxis_type='category', xaxis={'categoryorder': "total descending"})
+    grid_1[1][0].plotly_chart(fig)
 
-    # Prediction
-    st.write(f"#### Projected number of orders for the next 30 days for chosen article(s) {string_articles}")
-    st.write(f"Prediction model - autoarima. Please wait, it may take a few seconds for the data to load")
+    # Run out of stock
+    grid_1[0][1].markdown('**Out of stock articles**')
+    stock_by_articles_cat = current_stock.groupby(['nmid', 'subject'])['quantity'].sum().reset_index().sort_values(by='quantity', ascending=False)
+    critical_in_stock = stock_by_articles_cat.query('quantity == 0').reset_index(drop=True).set_index('nmid')
+    grid_1[0][1].dataframe(critical_in_stock['subject'])
+
+    grid_1[1][1].markdown('**Out of stock product groups**')
+    stock_by_subject_cat = current_stock.groupby(['subject'])['quantity'].sum().reset_index().sort_values(
+        by='quantity', ascending=False)
+    critical_subject_in_stock = stock_by_subject_cat.query('quantity == 0').reset_index(drop=True).set_index('subject')
+    grid_1[1][1].dataframe(critical_subject_in_stock.index)
+
+
+
+
+prediction_container = st.container()
+with prediction_container:
+    st.markdown('# Stock in days')
+    st.markdown('### Please, wait. Loading info can take few seconds')
     orders_ = orders.query('is_cancel == False').groupby(['nm_id', 'last_change_date'])['id'].count().reset_index()
-    dict_arima = {}
-    for article in articles_selection:
+    articles = orders_['nm_id'].unique()
+    from pandas.tseries.offsets import DateOffset
+    import statsmodels.api as sm
+
+    dict_prediction = {}
+    for article in articles:
         article_sales = orders_.query('nm_id == @article').set_index('last_change_date')
         idx = pd.date_range(orders['last_change_date'].min(), orders['last_change_date'].max())
         article_sales = article_sales.reindex(idx)
@@ -211,48 +186,77 @@ with orders_container:
         article_sales = article_sales.fillna(0)
         article_sales.columns = ['article', 'sales']
         article_sales = article_sales[['sales']]
+        model = sm.tsa.statespace.SARIMAX(article_sales['sales'], order=(0, 0, 0), seasonal_order=(1, 1, 1, 12))
+        results = model.fit()
+
         future_dates = [article_sales.index[-1] + DateOffset(days=x) for x in range(0, 30)]
-
-        model = auto_arima(article_sales,
-                           trace=True,
-                           test='adf',
-                           error_action='ignore',
-                           suppress_warnings=True,
-                           stepwise=True)
-        forecast = model.predict(n_periods=30)
-        forecast = pd.DataFrame(forecast, index=future_dates[1:], columns=['Prediction'])
-        dict_arima[article] = forecast['Prediction'].sum()
-        article_sales['Prediction'] = np.nan
-        forecast['sales'] = np.nan
-        res = pd.concat([article_sales, forecast], axis=0).reset_index()
-        res.columns = ['date', 'sales', 'prediction']
-        fig = go.Figure()
-        fig.add_trace(go.Scatter(x= res['date'], y= res['sales'], name = f'orders {article}'))
-        fig.add_trace(go.Scatter(x=res['date'], y=res['prediction'], name = f'predicted orders {article}'))
-        fig.update_layout(barmode='overlay', width=1300, height=300)
-        fig.update_traces(opacity=0.75)
-        st.plotly_chart(fig)
-
-    res_arima = pd.DataFrame(dict_arima.items(), columns=['nm_id', 'predicted_orders_arima_for_next_30_days']).set_index('nm_id').astype('int')
+        future_dataset_df = pd.DataFrame(index=future_dates[1:], columns=article_sales.columns)
+        future_df = pd.concat([article_sales, future_dataset_df])
+        future_df['forecast'] = results.predict(start=len(article_sales), end=len(future_df), dynamic=True)
+        dict_prediction[article] = future_df['forecast'].sum()
+    res = pd.DataFrame(dict_prediction.items(), columns=['nm_id', 'predicted_sales']).astype(int)
+    art_stock = current_stock.groupby(['nmid'])['quantity'].sum().reset_index().astype(int)
+    res = res.merge(art_stock, right_on = 'nmid', left_on = 'nm_id', how = 'left')[['nm_id', 'predicted_sales', 'quantity']].fillna(0)
+    res['stock_in_days'] = res['quantity']/res['predicted_sales']*30
+    res['quantity'] = res['quantity'].astype(int)
+    res['stock_in_days'] = res['stock_in_days'].round(0)
+    st.dataframe(res, use_container_width=True)
 
 
-#######################
-# Stock in days
-#######################
+def highlight_greaterthan(s, threshold, column):
+    is_max = pd.Series(data=False, index=s.index)
+    is_max[column] = s.loc[column] >= threshold
+    return ['background-color: red' if is_max.any() else '' for v in is_max]
 
 
-stock_in_days_container = st.container()
-with stock_in_days_container:
-    st.markdown('# Remaining goods in days')
-    for article in articles_selection:
-        stocks_days = stock_by_articles.query('nmid == @article').merge(res_arima, right_on='nm_id', left_on='nmid')[['nmid', 'quantity', 'predicted_orders_arima_for_next_30_days']]
-        if stocks_days['predicted_orders_arima_for_next_30_days'].sum() !=0:
-            stocks_days['days'] = (stocks_days['quantity']/stocks_days['predicted_orders_arima_for_next_30_days']*30).astype('int')
-            stocks_days.columns = ['nmid', 'in stock', 'predicted orders for the next 30 days', 'stock in days']
-            stocks_days = stocks_days.set_index('nmid')
-            stocks_days_style = stocks_days.style.set_table_styles(styles)
-            st.table(stocks_days_style)
 
-        else:
-            st.markdown(f'#### The number of predicted orders for the product {article} is 0. There is no demand for this product')
+def highlight_lessthan(s, threshold, column):
+    is_max = pd.Series(data=False, index=s.index)
+    is_max[column] = s.loc[column] <= threshold
+    return ['background-color: red' if is_max.any() else '' for v in is_max]
+
+st.markdown('# Too much')
+st.table(res.query('stock_in_days >= @number_1').set_index('nm_id').astype(int).style.set_table_styles(styles))
+
+st.markdown('# Not enought')
+st.table(res.query('stock_in_days <= @number_2').set_index('nm_id').astype(int).style.set_table_styles(styles))
+
+
+
+article_container = st.container()
+with article_container:
+    articles = orders.query('is_cancel == False')['nm_id'].unique()
+    articles_selection = st.multiselect('Choose a product article (nmid)',
+                                        options=articles,
+                                        default=articles[0])
+
+    for_string = [str(i) for i in articles_selection]
+    string_articles = ' '.join(for_string)
+
+    st.dataframe(res.query('nm_id == @articles_selection'))
+
+import matplotlib.pyplot as plt
+for article in articles_selection:
+    article_sales = orders_.query('nm_id == @article').set_index('last_change_date')
+    idx = pd.date_range(orders['last_change_date'].min(), orders['last_change_date'].max())
+    article_sales = article_sales.reindex(idx)
+    article_sales.loc[article_sales['nm_id'].isna(), 'nm_id'] = article
+    article_sales = article_sales.fillna(0)
+    article_sales.columns = ['article', 'sales']
+    article_sales = article_sales[['sales']]
+    model = sm.tsa.statespace.SARIMAX(article_sales['sales'], order=(0, 0, 0), seasonal_order=(1, 1, 1, 12))
+    results = model.fit()
+    future_dates = [article_sales.index[-1] + DateOffset(days=x) for x in range(0, 30)]
+    future_dataset_df = pd.DataFrame(index=future_dates[1:], columns=article_sales.columns)
+    future_df = pd.concat([article_sales, future_dataset_df])
+    future_df['forecast'] = results.predict(start=len(article_sales), end=len(future_df), dynamic=True)
+    future_df = future_df.reset_index()
+    fig = go.Figure()
+    fig.add_trace(go.Scatter(x=future_df['index'], y=future_df['sales'], name=f'orders {article}'))
+    fig.add_trace(go.Scatter(x=future_df['index'], y=future_df['forecast'], name=f'predicted orders {article}'))
+    fig.update_layout(barmode='overlay', width=1300, height=300)
+    fig.update_traces(opacity=0.75)
+    st.plotly_chart(fig)
+
+
 
