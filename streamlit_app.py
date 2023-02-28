@@ -172,32 +172,36 @@ prediction_container = st.container()
 with prediction_container:
     st.markdown('# Stock in days')
     st.markdown('### Please wait. Loading information may take a few seconds')
-    orders_ = orders.query('is_cancel == False').groupby(['nm_id', 'last_change_date'])['id'].count().reset_index()
-    articles = orders_['nm_id'].unique()
-    dict_prediction = {}
-    for article in articles:
-        article_sales = orders_.query('nm_id == @article').set_index('last_change_date')
-        idx = pd.date_range(orders['last_change_date'].min(), orders['last_change_date'].max())
-        article_sales = article_sales.reindex(idx)
-        article_sales.loc[article_sales['nm_id'].isna(), 'nm_id'] = article
-        article_sales = article_sales.fillna(0)
-        article_sales.columns = ['article', 'sales']
-        article_sales = article_sales[['sales']]
-        model = sm.tsa.statespace.SARIMAX(article_sales['sales'], order=(0, 0, 0), seasonal_order=(1, 1, 1, 12))
-        results = model.fit()
-        future_dates = [article_sales.index[-1] + DateOffset(days=x) for x in range(0, 30)]
-        future_dataset_df = pd.DataFrame(index=future_dates[1:], columns=article_sales.columns)
-        future_df = pd.concat([article_sales, future_dataset_df])
-        future_df['forecast'] = results.predict(start=len(article_sales), end=len(future_df), dynamic=True)
-        dict_prediction[article] = future_df['forecast'].sum()
-    res = pd.DataFrame(dict_prediction.items(), columns=['nm_id', 'predicted_sales']).astype(int)
-    art_stock = current_stock.groupby(['nmid'])['quantity'].sum().reset_index().astype(int)
-    res = res.merge(art_stock, right_on = 'nmid', left_on = 'nm_id', how = 'left')[['nm_id', 'predicted_sales', 'quantity']].fillna(0)
-    res['stock_in_days'] = res['quantity']/res['predicted_sales']*30
-    res['quantity'] = res['quantity'].astype(int)
-    res['stock_in_days'] = res['stock_in_days'].round(0)
-    res.columns = ['nm_id', 'predicted orders for the next 30 days', 'current stock', 'stock_in_days']
-    st.dataframe(res, use_container_width=True)
+    @st.experimental_memo(suppress_st_warning=True)
+    def skip_computation():
+        orders_ = orders.query('is_cancel == False').groupby(['nm_id', 'last_change_date'])['id'].count().reset_index()
+        articles = orders_['nm_id'].unique()
+        dict_prediction = {}
+        for article in articles:
+            article_sales = orders_.query('nm_id == @article').set_index('last_change_date')
+            idx = pd.date_range(orders['last_change_date'].min(), orders['last_change_date'].max())
+            article_sales = article_sales.reindex(idx)
+            article_sales.loc[article_sales['nm_id'].isna(), 'nm_id'] = article
+            article_sales = article_sales.fillna(0)
+            article_sales.columns = ['article', 'sales']
+            article_sales = article_sales[['sales']]
+            model = sm.tsa.statespace.SARIMAX(article_sales['sales'], order=(0, 0, 0), seasonal_order=(1, 1, 1, 12))
+            results = model.fit()
+            future_dates = [article_sales.index[-1] + DateOffset(days=x) for x in range(0, 30)]
+            future_dataset_df = pd.DataFrame(index=future_dates[1:], columns=article_sales.columns)
+            future_df = pd.concat([article_sales, future_dataset_df])
+            future_df['forecast'] = results.predict(start=len(article_sales), end=len(future_df), dynamic=True)
+            dict_prediction[article] = future_df['forecast'].sum()
+        res = pd.DataFrame(dict_prediction.items(), columns=['nm_id', 'predicted_sales']).astype(int)
+        art_stock = current_stock.groupby(['nmid'])['quantity'].sum().reset_index().astype(int)
+        res = res.merge(art_stock, right_on = 'nmid', left_on = 'nm_id', how = 'left')[['nm_id', 'predicted_sales', 'quantity']].fillna(0)
+        res['stock_in_days'] = res['quantity']/res['predicted_sales']*30
+        res['quantity'] = res['quantity'].astype(int)
+        res['stock_in_days'] = res['stock_in_days'].round(0)
+        res.columns = ['nm_id', 'predicted orders for the next 30 days', 'current stock', 'stock_in_days']
+        return res
+
+    st.dataframe(skip_computation(), use_container_width=True)
     st.markdown('**<NA> in stock_in_days means there is no demand for this product**')
 
 
@@ -205,10 +209,12 @@ with prediction_container:
 bad_articles_container = st.container()
 with bad_articles_container:
     st.markdown('# Excess goods')
-    st.table(res.query('stock_in_days >= @number_1').set_index('nm_id').astype(int).style.set_table_styles(styles))
+    if number_1:
+        st.table(skip_computation().query('stock_in_days >= @number_1').set_index('nm_id').astype(int).style.set_table_styles(styles))
 
     st.markdown('# Shortage of goods')
-    st.table(res.query('stock_in_days <= @number_2').set_index('nm_id').astype(int).style.set_table_styles(styles))
+    if number_2:
+        st.table(skip_computation().query('stock_in_days <= @number_2').set_index('nm_id').astype(int).style.set_table_styles(styles))
 
 
 
@@ -223,9 +229,10 @@ with article_details_container:
 
     for_string = [str(i) for i in articles_selection]
     string_articles = ' '.join(for_string)
-    st.dataframe(res.query('nm_id == @articles_selection').set_index('nm_id'), use_container_width=True)
+    st.dataframe(skip_computation().query('nm_id == @articles_selection').set_index('nm_id'), use_container_width=True)
 
     for article in articles_selection:
+        orders_ = orders.query('is_cancel == False').groupby(['nm_id', 'last_change_date'])['id'].count().reset_index()
         article_sales = orders_.query('nm_id == @article').set_index('last_change_date')
         idx = pd.date_range(orders['last_change_date'].min(), orders['last_change_date'].max())
         article_sales = article_sales.reindex(idx)
@@ -246,4 +253,3 @@ with article_details_container:
         fig.update_layout(barmode='overlay', width=1300, height=300)
         fig.update_traces(opacity=0.75)
         st.plotly_chart(fig)
-
