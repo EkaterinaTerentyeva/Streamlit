@@ -253,3 +253,10 @@ with article_details_container:
         fig.update_layout(barmode='overlay', width=1300, height=300)
         fig.update_traces(opacity=0.75)
         st.plotly_chart(fig)
+
+
+
+
+
+
+
