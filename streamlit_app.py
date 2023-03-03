@@ -172,7 +172,7 @@ prediction_container = st.container()
 with prediction_container:
     st.markdown('# Stock in days')
     st.markdown('### Please wait. Loading information may take a few seconds')
-    @st.experimental_memo(suppress_st_warning=True)
+#    @st.experimental_memo(suppress_st_warning=True)
     def skip_computation():
         orders_ = orders.query('is_cancel == False').groupby(['nm_id', 'last_change_date'])['id'].count().reset_index()
         articles = orders_['nm_id'].unique()
